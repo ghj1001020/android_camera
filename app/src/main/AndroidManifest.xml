@@ -3,8 +3,9 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.CAMERA" />
-    <uses-feature android:name="android.hardware.camera.autofocus" />
-    <uses-feature android:name="android.hardware.camera" android:required="false" />
+
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+    <uses-feature android:name="android.hardware.camera" android:required="true" />
 
 
     <application
@@ -24,11 +25,15 @@
             </intent-filter>
         </activity>
 
+        <!-- 카메라 -->
+        <activity android:name=".camera.Camera1Activity"
+            android:exported="false"
+            android:theme="@style/CAMERA" />
+
         <!-- 카메라2 -->
         <activity android:name=".camera2.Camera2Activity"
             android:exported="false"
-            android:theme="@style/CAMERA"
-            android:launchMode="singleInstance" />
+            android:theme="@style/CAMERA" />
 
     </application>
 
