@@ -1,6 +1,7 @@
 package com.ghj.camera.camera;
 
 import android.content.Context;
+import android.content.res.Configuration;
 import android.hardware.Camera;
 import android.util.AttributeSet;
 import android.util.Log;
@@ -23,12 +24,25 @@ public class CameraSurfaceView extends SurfaceView implements SurfaceHolder.Call
     SurfaceHolder mSurfaceHolder;
 
 
-    public CameraSurfaceView(Context context, Camera camera) {
+    public CameraSurfaceView(Context context, Camera camera, Camera.Size previewSize) {
         super(context);
         this.mCamera = camera;
+        this.mPreviewSize = previewSize;
         this.mSurfaceHolder = getHolder();
         this.mSurfaceHolder.addCallback(this);
         this.mSurfaceHolder.setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);
+    }
+
+    @Override
+    protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+        super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+        int orientation = getResources().getConfiguration().orientation;
+        if(orientation == Configuration.ORIENTATION_LANDSCAPE) {
+            setMeasuredDimension(mPreviewSize.width, mPreviewSize.height);
+        }
+        else {
+            setMeasuredDimension(mPreviewSize.height, mPreviewSize.width);
+        }
     }
 
     // 서피스뷰 생성
@@ -51,12 +65,6 @@ public class CameraSurfaceView extends SurfaceView implements SurfaceHolder.Call
         if( mSurfaceHolder.getSurface() == null ) return;
         try {
             mCamera.stopPreview();
-
-            Camera.Parameters parameters = mCamera.getParameters();
-            List<Camera.Size> sizes = parameters.getSupportedPreviewSizes();
-            mPreviewSize = getOptimalPreviewSize(sizes, width, height);
-            parameters.setPreviewSize(mPreviewSize.width, mPreviewSize.height);
-            mCamera.setParameters(parameters);
 
             // 프리뷰 멈추고 다시 시작
             mCamera.setPreviewDisplay(mSurfaceHolder);
