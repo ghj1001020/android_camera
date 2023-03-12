@@ -2,9 +2,16 @@ package com.ghj.camera.camera;
 
 import android.Manifest;
 import android.content.DialogInterface;
+import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.content.res.Configuration;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Matrix;
 import android.graphics.Point;
 import android.hardware.Camera;
+import android.media.ExifInterface;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
 import android.util.Log;
@@ -13,20 +20,19 @@ import android.view.View;
 import android.widget.FrameLayout;
 import android.widget.ImageButton;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 
 import com.ghj.camera.R;
-import com.ghj.camera.camera2.Camera2Activity;
 import com.ghj.camera.common.Code;
 import com.ghj.camera.util.Util;
 
 import java.io.File;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.util.List;
 
 public class Camera1Activity extends AppCompatActivity {
@@ -37,6 +43,12 @@ public class Camera1Activity extends AppCompatActivity {
     FrameLayout mPreviewLayout;
     ImageButton mPictureBtn;
 
+    // 카메라
+    CameraSurfaceView mPreview;
+    Camera mCamera;
+    int mCameraId = 0;
+    Camera.Size mPreviewSize;
+
     // 권한
     private final int PERMISSIONS_REQ_CODE = 10000;
     private String[] permissions = new String[]{
@@ -44,19 +56,12 @@ public class Camera1Activity extends AppCompatActivity {
     };
     int mCameraPermission = Code.PERMISSION.PERMISSION_UNKNOWN; // 카메라 권한여부
 
-    // 카메라
-    Camera mCamera;
-    Camera.Size mPreviewSize;
-    CameraSurfaceView mPreview;
-    int mCameraId = 0;
-
-    // 최대 너비 높이
-    private static final int MAX_PREVIEW_WIDTH = 1920;
-    private static final int MAX_PREVIEW_HEIGHT = 1080;
-
     // 화면캡쳐 이미지
     private File mImageDir;
     private File mImageFile;
+
+    // 최대 너비 높이
+    private int DISPLAY_WIDTH, DISPLAY_HEIGHT;
 
 
     @Override
@@ -83,10 +88,16 @@ public class Camera1Activity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        Log.d(TAG, "onResume");
 
         // 카메라 하드웨어 체크
         if(!getPackageManager().hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)) {
             error(getString(R.string.no_camera_feature));
+            return;
+        }
+
+        if(ActivityCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            requestPermission();
             return;
         }
 
@@ -96,7 +107,6 @@ public class Camera1Activity extends AppCompatActivity {
     @Override
     protected void onPause() {
         super.onPause();
-        closeCamera();
     }
 
     // 카메라 열기
@@ -106,9 +116,8 @@ public class Camera1Activity extends AppCompatActivity {
             return;
         }
 
-        Camera camera = null;
-        Camera.Size cameraSize = null;
         // Camera Id 후 Camera 생성
+        int displayRotation = getWindowManager().getDefaultDisplay().getRotation();
         int count = Camera.getNumberOfCameras();
         for(int i=0; i<count; i++) {
             Camera.CameraInfo info = new Camera.CameraInfo();
@@ -119,7 +128,6 @@ public class Camera1Activity extends AppCompatActivity {
             }
 
             // 화면방향
-            int displayRotation = getWindowManager().getDefaultDisplay().getRotation();
             int sensorOrientation = info.orientation;
             Log.d(TAG, displayRotation + " , " + sensorOrientation);
             boolean isSwapped = false;  // 화면, 카메라방향이 다른지 여부
@@ -138,51 +146,34 @@ public class Camera1Activity extends AppCompatActivity {
                     break;
             }
 
-            int width = mPreviewLayout.getWidth();
-            int height = mPreviewLayout.getHeight();
             // 화면사이즈
             Point displaySize = new Point();
             getWindowManager().getDefaultDisplay().getSize(displaySize);
-            int rotatedPreviewWidth = width;
-            int rotatedPreviewHeight = height;
             int maxPreviewWidth = displaySize.x;
             int maxPreviewHeight = displaySize.y;
 
             if(isSwapped) {
-                rotatedPreviewWidth = height;
-                rotatedPreviewHeight = width;
                 maxPreviewWidth = displaySize.y;
                 maxPreviewHeight = displaySize.x;
             }
 
             mCameraId = i;
+            mCamera = getCameraInstance(mCameraId);
 
-            camera = getCameraInstance(mCameraId);
-            if(camera != null) {
-                List<Camera.Size> previewSizes = camera.getParameters().getSupportedPreviewSizes();
-                for(int pi=0; pi<previewSizes.size(); pi++) {
-                    Camera.Size tempSize = previewSizes.get(pi);
-                    if(tempSize.width <= maxPreviewWidth && tempSize.height <= maxPreviewHeight) {
-                        cameraSize = tempSize;
-                        break;
-                    }
+            List<Camera.Size> previewSizes = mCamera.getParameters().getSupportedPreviewSizes();
+            for(int pi=0; pi<previewSizes.size(); pi++) {
+                Camera.Size tempSize = previewSizes.get(pi);
+                if(tempSize.width <= maxPreviewWidth && tempSize.height <= maxPreviewHeight) {
+                    mPreviewSize = tempSize;
+                    break;
                 }
-                break;
             }
+            break;
         }
 
-        mCamera = camera;
-        mPreview = new CameraSurfaceView(this, mCamera, cameraSize);
+        mPreview = new CameraSurfaceView(this, mCamera, mPreviewSize, displayRotation);
+        mPreviewLayout.removeAllViews();
         mPreviewLayout.addView(mPreview);
-    }
-
-    // 카메라 닫기
-    public void closeCamera() {
-        if(mCamera != null) {
-            mCamera.stopPreview();
-            mCamera.release();
-            mCamera = null;
-        }
     }
 
     // 권한요청
@@ -220,7 +211,38 @@ public class Camera1Activity extends AppCompatActivity {
     Camera.PictureCallback mJpegCallback = new Camera.PictureCallback() {
         @Override
         public void onPictureTaken(byte[] data, Camera camera) {
+            String filename = "cameraApp_" + Util.getToday("yyyyMMdd_HHmmss") + ".jpg";
+            mImageFile = new File(mImageDir, filename);
 
+            try {
+                Bitmap tempJpg = BitmapFactory.decodeByteArray(data, 0, data.length);
+                // 이미지회전
+                int orientation = getWindowManager().getDefaultDisplay().getRotation();
+                switch (orientation) {
+                    case Surface.ROTATION_0:
+                        tempJpg = rotateBitmap(tempJpg, 90);
+                        break;
+                    case Surface.ROTATION_90:
+                        tempJpg = rotateBitmap(tempJpg, 0);
+                        break;
+                    case Surface.ROTATION_270:
+                        tempJpg = rotateBitmap(tempJpg, 180);
+                        break;
+                }
+
+                FileOutputStream fos = new FileOutputStream(mImageFile);
+                tempJpg.compress(Bitmap.CompressFormat.JPEG, 100, fos);
+                fos.close();
+                
+                // 이미지 브로드캐스팅
+                broadcastImage();
+
+                mPreview.closeCamera();
+                openCamera();
+            }
+            catch (IOException e) {
+                e.printStackTrace();
+            }
         }
     };
 
@@ -245,7 +267,6 @@ public class Camera1Activity extends AppCompatActivity {
 
     // 에러발생
     private void error(String message) {
-        closeCamera();
         Util.alert(this, "에러", message, new DialogInterface.OnClickListener() {
             @Override
             public void onClick(DialogInterface dialog, int which) {
@@ -264,12 +285,17 @@ public class Camera1Activity extends AppCompatActivity {
         });
     }
 
-    // 프리뷰 사이즈 비교
-    private static class CompareSizes implements Comparator<Camera.Size> {
-        @Override
-        public int compare(Camera.Size o1, Camera.Size o2) {
-            // 부호반환 양수 1, 0, 음수 -1
-            return Long.signum((long) o1.width * o1.height - (long) o2.width * o2.height);
-        }
+    // 찍은 이미지 브로드캐스트
+    private void broadcastImage() {
+        Intent intent = new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE);
+        intent.setData(Uri.fromFile(mImageFile));
+        sendBroadcast(intent);
+    }
+
+    // 이미지 회전
+    private Bitmap rotateBitmap(Bitmap source, float angle) {
+        Matrix matrix = new Matrix();
+        matrix.postRotate(angle);
+        return Bitmap.createBitmap(source, 0, 0, source.getWidth(), source.getHeight(), matrix, true);
     }
 }
