@@ -96,11 +96,6 @@ public class Camera1Activity extends AppCompatActivity {
             return;
         }
 
-        if(ActivityCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            requestPermission();
-            return;
-        }
-
         openCamera();
     }
 

@@ -120,11 +120,11 @@ public class Util {
         try
         {
             intent = new Intent( Settings.ACTION_APPLICATION_DETAILS_SETTINGS ).setData( Uri.parse( "package:" + context.getPackageName() ) );
+            context.startActivity(intent);
         }
         catch ( ActivityNotFoundException e ) {
             intent = new Intent( Settings.ACTION_MANAGE_APPLICATIONS_SETTINGS );
+            context.startActivity(intent);
         }
-
-        context.startActivity(intent);
     }
 }
